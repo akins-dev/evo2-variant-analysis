@@ -1,5 +1,6 @@
 import base64
 import sys
+from unittest import result
 from venv import create
 
 import modal
@@ -45,7 +46,7 @@ def run_brca1_analysis():
     import pandas as pd
     import os
     import seaborn as sns
-    from sklearn.metrics import roc_auc_score
+    from sklearn.metrics import roc_auc_score, roc_curve
 
     from evo2 import Evo2
 
@@ -132,6 +133,37 @@ def run_brca1_analysis():
     y_true = (brca1_subset['class'] == 'LOF')
     auroc = roc_auc_score(y_true, -brca1_subset['evo2_delta_score'])
     print(f'BRCA1 zero-shot variant effect prediction AUROC: {auroc:.4f}')
+
+    # --- CALCULATE THRESHOLD START ---
+    y_true = (brca1_subset['class'] == 'LOF')
+
+    fpr, tpr, thresholds = roc_curve(y_true, -brca1_subset['evo2_delta_score']) 
+
+    # fpr = false positive rate
+    # tpr = true positive rate
+    # thresholds = decision thresholds
+    # LOF = loss of function (harmful)
+    # FUNC/INT = functional/intermediate (benign or mild)
+
+    optimal_idx = (tpr - fpr).argmax()
+    optimal_threshold = -thresholds[optimal_idx]
+
+    lof_scores = brca1_subset.loc[brca1_subset['class'] == 'LOF', 'evo2_delta_score']
+    func_scores = brca1_subset.loc[brca1_subset['class'] == 'FUNC/INT', 'evo2_delta_score']
+
+    # Calculate the standard deviation of the scores from the threshold in each distribution (LOF and FUNC/INT)
+    lof_std = lof_scores.std()
+    func_std = func_scores.std()
+
+    confidence_params = {
+        "threshold": optimal_threshold,
+        "lof_std": lof_std,
+        "func_std": func_std,
+    }
+
+    print(f"Confidence parameters: {confidence_params}")
+
+    # --- CALCULATE THRESHOLD END ---
     
 
     plt.figure(figsize=(4, 2))
@@ -204,6 +236,131 @@ def brca1_example():
         plt.show()
 
 
+def get_genome_sequence(position, genome: str, chromosome: str, window_size=8192):
+    import requests
+
+    half_window = window_size // 2
+    start = max(0, position - 1 - half_window)
+    end = position - 1 + half_window + 1
+
+    print(f"Fetching {window_size}bp window around position {position} from UCSC API...")
+    print(f"Coordinates: {chromosome}:{start}-{end} ({genome})")
+
+    api_url = f"https://api.genome.ucsc.edu/getData/sequence?genome={genome};chrom={chromosome};start={start};end={end}" 
+    response = requests.get(api_url)
+
+    if response.status_code != 200:
+        raise Exception(f"Error fetching sequence from UCSC API: {response.status_code} - {response.text}")
+
+    genome_data = response.json()
+
+    if 'dna' not in genome_data:
+        error = genome_data.get('error', 'Unknown error')
+        raise Exception(f"Error in UCSC API response: {error}")
+
+    sequence = genome_data.get('dna', '').upper()
+    expected_length = end - start
+    if len(sequence) != expected_length:
+        print(f"Warning: Expected sequence length is {expected_length}, but we got {len(sequence)}")
+
+    print(f"Loaded reference genome sequence window (length {len(sequence)} bases)")
+
+    return sequence, start
+
+def analyze_variant(relative_pos_in_window, reference, alternative, window_seq, model):
+    var_seq = window_seq[:relative_pos_in_window] + alternative + window_seq[relative_pos_in_window+1:] # Create variant sequence
+
+    ref_score = model.score_sequences([window_seq])[0] # Score of reference sequence
+    var_score = model.score_sequences([var_seq])[0] # Score of variant sequence
+
+    delta_score = var_score - ref_score
+
+    # Thresholds: Confidence parameters: {'threshold': np.float32(-0.0009178519), 'lof_std': np.float32(0.0015140239), 'func_std': np.float32(0.0009016589)}
+
+    threshold = -0.0009178519
+    lof_std = 0.0015140239
+    func_std = 0.0009016589
+
+    # Benign means the variant is not harmful
+    # Pathogenic means the variant is harmful
+
+    # Check if the variant is harmful based on delta score threshold
+    if delta_score < threshold:
+        prediction = "Likely pathogenic"
+        confidence = min(1.0, abs(threshold - delta_score) / lof_std) # Confidence increases as delta_score goes below threshold (for pathogenic predictions)
+    else:
+        prediction = "Likely benign"
+        confidence = min(1.0, abs(delta_score - threshold) / func_std) # Confidence increases as delta_score goes above threshold (for benign predictions)
+
+    return {
+        "ref_score": ref_score,
+        "alternative": alternative,
+        "delta_score": float(delta_score),
+        "prediction": prediction,
+        "classification_confidence": float(confidence),
+    }
+
+
+
+@app.cls(gpu="H100", volumes={mount_path: volume}, max_containers=3, retries=2, scaledown_window=120)
+class Evo2Model:
+    @modal.enter()
+    def load_evo2_model(self):
+        from evo2 import Evo2
+
+        print("Loading evo2 model...")
+        self.model = Evo2('evo2_7b')
+        print("Evo2 model loaded.")
+
+    @modal.method()
+    # @modal.fastapi_endpoint(method="POST")
+    def analyze_single_variant(self, variant_position: int, alternative: str, genome: str, chromosome: str):
+        print("Genome: ", genome)
+        print("Chromosome: ", chromosome)
+        print("variant position: ", variant_position)
+        print("variant alternative:", alternative)
+
+        WINDOW_sIZE = 8192
+
+        window_seq, seq_start = get_genome_sequence(
+            position=variant_position, 
+            genome=genome, 
+            chromosome=chromosome, 
+            window_size=WINDOW_sIZE
+        ) 
+
+        print(f"Fetched genome sequence window, first 100 bases: {window_seq[:100]}...")
+
+        relative_position = variant_position - 1 - seq_start
+        print(f"Relative position within window: {relative_position}")
+
+        if relative_position < 0 or relative_position >= len(window_seq):
+            raise ValueError(f"Variant position {variant_position} is out of bounds of the fetched sequence window (start: {seq_start}, end: {seq_start + len(window_seq)})")
+        
+        reference = window_seq[relative_position] # Reference base at the variant position
+        print(f"Reference base is: {reference}")
+
+        # Analayze the variant
+        result = analyze_variant(
+            relative_pos_in_window=relative_position,
+            reference=reference,
+            alternative=alternative,
+            window_seq=window_seq,
+            model=self.model,
+        )
+
+        result["position"] = variant_position
+
+        return result
+
+
+
 @app.local_entrypoint()
 def main():
-    brca1_example.local()
+    evo2_model = Evo2Model()
+    result = evo2_model.analyze_single_variant.remote(variant_position=43119628, alternative='G', genome='hg38', chromosome='chr17')
+
+    print("Variant analysis result:", result)
+
+    # brca1_example.local()
+    # brca1_example.remote()
