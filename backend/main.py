@@ -21,6 +21,8 @@ evo2_image = (
     })
     # Upgrade pip, setuptools, wheel
     .run_commands("pip install --upgrade pip setuptools wheel")
+
+    .run_commands("pip install 'fastapi[all]'")
     # Install Torch (must match CUDA 12.4 runtime)
     .run_commands("pip install torch==2.8.0")
     .run_commands("pip install flash-attn --no-build-isolation")
@@ -131,7 +133,7 @@ def run_brca1_analysis():
 
     # Calculate AUROC of zero-shot predictions
     y_true = (brca1_subset['class'] == 'LOF')
-    auroc = roc_auc_score(y_true, -brca1_subset['evo2_delta_score'])
+    auroc = float(roc_auc_score(y_true, -brca1_subset['evo2_delta_score']))
     print(f'BRCA1 zero-shot variant effect prediction AUROC: {auroc:.4f}')
 
     # --- CALCULATE THRESHOLD START ---
@@ -156,9 +158,9 @@ def run_brca1_analysis():
     func_std = func_scores.std()
 
     confidence_params = {
-        "threshold": optimal_threshold,
-        "lof_std": lof_std,
-        "func_std": func_std,
+        "threshold": float(optimal_threshold),
+        "lof_std": float,
+        "func_std": float(func_std),
     }
 
     print(f"Confidence parameters: {confidence_params}")
@@ -270,8 +272,8 @@ def get_genome_sequence(position, genome: str, chromosome: str, window_size=8192
 def analyze_variant(relative_pos_in_window, reference, alternative, window_seq, model):
     var_seq = window_seq[:relative_pos_in_window] + alternative + window_seq[relative_pos_in_window+1:] # Create variant sequence
 
-    ref_score = model.score_sequences([window_seq])[0] # Score of reference sequence
-    var_score = model.score_sequences([var_seq])[0] # Score of variant sequence
+    ref_score = float(model.score_sequences([window_seq])[0]) # Score of reference sequence
+    var_score = float(model.score_sequences([var_seq])[0]) # Score of variant sequence
 
     delta_score = var_score - ref_score
 
@@ -293,13 +295,12 @@ def analyze_variant(relative_pos_in_window, reference, alternative, window_seq, 
         confidence = min(1.0, abs(delta_score - threshold) / func_std) # Confidence increases as delta_score goes above threshold (for benign predictions)
 
     return {
-        "ref_score": ref_score,
+        "ref_score": float(ref_score),
         "alternative": alternative,
         "delta_score": float(delta_score),
         "prediction": prediction,
         "classification_confidence": float(confidence),
     }
-
 
 
 @app.cls(gpu="H100", volumes={mount_path: volume}, max_containers=3, retries=2, scaledown_window=120)
@@ -312,8 +313,8 @@ class Evo2Model:
         self.model = Evo2('evo2_7b')
         print("Evo2 model loaded.")
 
-    @modal.method()
-    # @modal.fastapi_endpoint(method="POST")
+    # @modal.method()
+    @modal.fastapi_endpoint(method="POST")
     def analyze_single_variant(self, variant_position: int, alternative: str, genome: str, chromosome: str):
         print("Genome: ", genome)
         print("Chromosome: ", chromosome)
@@ -352,7 +353,6 @@ class Evo2Model:
         result["position"] = variant_position
 
         return result
-
 
 
 @app.local_entrypoint()
