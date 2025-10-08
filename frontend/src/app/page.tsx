@@ -10,6 +10,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import {
@@ -35,6 +43,7 @@ export default function HomePage() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [mode, setMode] = useState<modeType>("search");
   const [searchResults, setSearchResults] = useState<GeneFromSearch[]>([]);
+  const [selectedGene, setSelectedGene] = useState<GeneFromSearch | null>(null);
 
   useEffect(() => {
     const fetchGenomes = async () => {
@@ -113,12 +122,15 @@ export default function HomePage() {
 
   const handleGenomeChange = (value: string) => {
     setSelectedGenome(value);
+    setSearchResults([]);
+    setSelectedGene(null);
   };
 
   const switchMode = (newMode: modeType) => {
     if (newMode === mode) return;
 
     setSearchResults([]);
+    setSelectedGene(null);
     setError(null);
 
     if (newMode === "browse" && selelctedChromosome) {
@@ -134,7 +146,7 @@ export default function HomePage() {
 
   const handleSearch = async (e: React.FormEvent | null = null) => {
     if (e) e.preventDefault();
-    console.log("searchQuery", searchQuery)
+    console.log("searchQuery", searchQuery);
     if (!searchQuery.trim()) return;
 
     // perform gene search
@@ -144,9 +156,7 @@ export default function HomePage() {
   const loadBRCA1Example = () => {
     setMode("search");
     setSearchQuery("BRCA1");
-
-    // handle search
-    void handleSearch();
+    void performGeneSearch("BRCA1", selectedGenome);
   };
 
   return (
@@ -231,7 +241,10 @@ export default function HomePage() {
                   className="data-[state=active]:text-primary data-[state=active]:bg-white"
                   value="browse"
                 >
-                  <p className="text-start">Browse <br className="flex sm:hidden"/>Chromosomes</p>
+                  <p className="text-start">
+                    Browse <br className="flex sm:hidden" />
+                    Chromosomes
+                  </p>
                 </TabsTrigger>
               </TabsList>
 
@@ -307,6 +320,80 @@ export default function HomePage() {
             {error && (
               <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                 {error}
+              </div>
+            )}
+
+            {searchResults.length > 0 && !isLoading && (
+              <div className="mt-6">
+                <div className="mb-2">
+                  <h4 className="text-primary/70 text-xs font-normal">
+                    {mode === "search" ? (
+                      <>
+                        Search Results:{" "}
+                        <span className="text-primary font-medium">
+                          {searchResults.length} genes
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        Genes on {selelctedChromosome}:{" "}
+                        <span className="text-primary font-medium">
+                          {searchResults.length} found
+                        </span>
+                      </>
+                    )}
+                  </h4>
+                </div>
+
+                <div className="border-primary/5 overflow-hidden rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-secondary/50 hover:bg-secondary/70">
+                        <TableHead className="text-primary/70 text-xs font-normal">
+                          Symbol
+                        </TableHead>
+                        <TableHead className="text-primary/70 text-xs font-normal">
+                          Name
+                        </TableHead>
+                        <TableHead className="text-primary/70 text-xs font-normal">
+                          Location
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {searchResults.map((gene, index) => (
+                        <TableRow
+                          key={`${gene.symbol}-${index}`}
+                          className="border-primary/5 hhover:bg-secondary/50 cursor-pointer border-b"
+                          onClick={() => setSelectedGene(gene)}
+                        >
+                          <TableCell className="text-primary py-2 font-medium">
+                            {gene.symbol}
+                          </TableCell>
+                          <TableCell className="text-primary py-2 font-medium">
+                            {gene.name}
+                          </TableCell>
+                          <TableCell className="text-primary py-2 font-medium">
+                            {gene.chromosome}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            )}
+
+            {!isLoading && !error && searchResults.length === 0 && (
+              <div className="flex h-48 flex-col items-center justify-center text-center text-gray-400">
+                <Search className="mb-4 h-10 w-10 text-gray-400"/>{" "}
+                <p className="text-sm leading-relaxed">
+                  {mode === "search"
+                    ? "Enter a gene or symbol and click search"
+                    : selelctedChromosome
+                      ? "No gene found on this chromosome"
+                      : "Select a chromosome to view genes"}
+                </p>
               </div>
             )}
           </CardContent>
