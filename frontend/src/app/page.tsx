@@ -15,7 +15,9 @@ import { cn } from "@/lib/utils";
 import {
   getAvailableGenomes,
   getGenomeChromosomes,
+  searchGenes,
   type ChromosomeFromSearch,
+  type GeneFromSearch,
   type GenomeAssemblyFromSearch,
 } from "@/utils/genome-api";
 import { Search } from "lucide-react";
@@ -29,10 +31,10 @@ export default function HomePage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [chromosomes, setChromosomes] = useState<ChromosomeFromSearch[]>([]);
-  const [selelctedChromosomes, setSelectedChromosomes] =
-    useState<string>("chr1");
+  const [selelctedChromosome, setSelectedChromosome] = useState<string>("chr1");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [mode, setMode] = useState<modeType>("search");
+  const [searchResults, setSearchResults] = useState<GeneFromSearch[]>([]);
 
   useEffect(() => {
     const fetchGenomes = async () => {
@@ -47,9 +49,7 @@ export default function HomePage() {
         if (error instanceof Error) {
           setError(`Failed to fetch genome assemblies. Error: ${error}`);
         } else {
-          setError(
-            "Failed to fetch genome assemblies.",
-          );
+          setError("Failed to fetch genome assemblies.");
         }
       } finally {
         setIsLoading(false);
@@ -67,7 +67,7 @@ export default function HomePage() {
         setChromosomes(data.chromosomes);
         console.log(data.chromosomes);
         if (data.chromosomes.length > 0) {
-          setSelectedChromosomes(data.chromosomes[0]!.name);
+          setSelectedChromosome(data.chromosomes[0]!.name);
         }
       } catch (error) {
         setError("Failed to fetch chromosome data.");
@@ -79,20 +79,66 @@ export default function HomePage() {
     void fetchChromosomes();
   }, [selectedGenome]);
 
+  const performGeneSearch = async (
+    query: string,
+    genome: string,
+    filterFn?: (gene: GeneFromSearch) => boolean,
+  ) => {
+    try {
+      setIsLoading(true);
+      const data: [string, string, GeneFromSearch[]] = await searchGenes(
+        query,
+        genome,
+      );
+      const results = filterFn ? data[2].filter(filterFn) : data[2];
+      console.log("results", data[2]);
+
+      setSearchResults(results);
+    } catch (error) {
+      console.log("error", error);
+      setError("Failed to search genes.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!selelctedChromosome || mode !== "browse") return;
+    void performGeneSearch(
+      selelctedChromosome,
+      selectedGenome,
+      (gene: GeneFromSearch) => gene.chromosome === selelctedChromosome,
+    );
+  }, [selelctedChromosome, selectedGenome, mode]);
+
   const handleGenomeChange = (value: string) => {
     setSelectedGenome(value);
   };
 
   const switchMode = (newMode: modeType) => {
     if (newMode === mode) return;
+
+    setSearchResults([]);
+    setError(null);
+
+    if (newMode === "browse" && selelctedChromosome) {
+      void performGeneSearch(
+        selelctedChromosome,
+        selectedGenome,
+        (gene: GeneFromSearch) => gene.chromosome === selelctedChromosome,
+      );
+    }
+
     setMode(newMode);
   };
 
   const handleSearch = async (e: React.FormEvent | null = null) => {
     if (e) e.preventDefault();
+    console.log("searchQuery", searchQuery)
     if (!searchQuery.trim()) return;
 
     // perform gene search
+    void performGeneSearch(searchQuery, selectedGenome);
   };
 
   const loadBRCA1Example = () => {
@@ -174,7 +220,7 @@ export default function HomePage() {
               value={mode}
               onValueChange={(value) => switchMode(value as modeType)}
             >
-              <TabsList className="bg-secondary mb-4">
+              <TabsList className="bg-secondary mb-4 h-12 sm:h-9">
                 <TabsTrigger
                   className="data-[state=active]:text-primary data-[state=active]:bg-white"
                   value="search"
@@ -185,7 +231,7 @@ export default function HomePage() {
                   className="data-[state=active]:text-primary data-[state=active]:bg-white"
                   value="browse"
                 >
-                  Browse Chromosomes
+                  <p className="text-start">Browse <br className="flex sm:hidden"/>Chromosomes</p>
                 </TabsTrigger>
               </TabsList>
 
@@ -230,16 +276,16 @@ export default function HomePage() {
                       <Button
                         key={chr.name}
                         variant={
-                          selelctedChromosomes === chr.name
+                          selelctedChromosome === chr.name
                             ? "default"
                             : "outline"
                         }
                         className={cn(
                           "border-bg-primary/10 h-8 cursor-pointer rounded-md px-3 text-sm",
-                          selelctedChromosomes !== chr.name &&
+                          selelctedChromosome !== chr.name &&
                             "hover:text-primary hover:bg-secondary",
                         )}
-                        onClick={() => setSelectedChromosomes(chr.name)}
+                        onClick={() => setSelectedChromosome(chr.name)}
                       >
                         {chr.name} ({chr.size.toLocaleString()} bp)
                       </Button>
