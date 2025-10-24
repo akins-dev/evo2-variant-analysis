@@ -193,6 +193,7 @@ export async function searchGenes(
             geneId: geneIds[i] ?? "",
           });
         } catch {
+          console.log("searchGenes[ERROR]: Something went wrong")
           continue;
         }
       }
