@@ -80,6 +80,7 @@ export default function HomePage() {
           setSelectedChromosome(data.chromosomes[0]!.name);
         }
       } catch (error) {
+        console.log("fetchChromosomes error: ", error);
         setError("Failed to fetch chromosome data.");
       } finally {
         setIsLoading(false);
@@ -159,6 +160,9 @@ export default function HomePage() {
     setSearchQuery("BRCA1");
     void performGeneSearch("BRCA1", selectedGenome);
   };
+
+
+  console.log(selectedGene);
 
   return (
     <div className="bg-secondary min-h-screen">
