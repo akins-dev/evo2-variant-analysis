@@ -21,14 +21,12 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
-import {
-  getAvailableGenomes,
-  getGenomeChromosomes,
-  searchGenes,
-  type ChromosomeFromSearch,
-  type GeneFromSearch,
-  type GenomeAssemblyFromSearch,
-} from "@/utils/genome-api";
+import type { GeneFromSearch } from "@/types/gene-search";
+import type { ChromosomeFromSearch } from "@/types/genome-chromosomes";
+import type { GenomeAssemblyFromSearch } from "@/types/genomes";
+import { getGenomeChromosomes } from "@/utils/fetch-genome-chromosomes";
+import { getAvailableGenomes } from "@/utils/fetch-genomes";
+import { searchGenes } from "@/utils/search-genes";
 import { Search } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -161,7 +159,6 @@ export default function HomePage() {
     void performGeneSearch("BRCA1", selectedGenome);
   };
 
-
   console.log(selectedGene);
 
   return (
@@ -185,7 +182,11 @@ export default function HomePage() {
 
       <main className="container mx-auto px-6 py-6">
         {selectedGene ? (
-          <GeneViewer gene={selectedGene} genomeId={selectedGenome} onClose={() => setSelectedGene(null)} />
+          <GeneViewer
+            gene={selectedGene}
+            genomeId={selectedGenome}
+            onClose={() => setSelectedGene(null)}
+          />
         ) : (
           <>
             <Card className="mb-6 gap-0 border-none bg-white py-0 shadow-sm">

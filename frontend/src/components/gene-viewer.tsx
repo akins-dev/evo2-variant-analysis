@@ -1,11 +1,11 @@
 "use client";
 
-import { fetchGeneDetails, type GeneFromSearch } from "@/utils/genome-api";
 import { Button } from "./ui/button";
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useState } from "react";
-import { set } from "zod/v4";
 import type { GeneBounds, GeneRecord } from "@/types/gene-details";
+import { fetchGeneDetails } from "@/utils/fetch-gene-details";
+import type { GeneFromSearch } from "@/types/gene-search";
 
 const GeneViewer = ({
   gene,
@@ -39,7 +39,8 @@ const GeneViewer = ({
       }
 
       try {
-        const { geneDetails, initialRange, geneBounds } = await fetchGeneDetails(gene.geneId);
+        const { geneDetails, initialRange, geneBounds } =
+          await fetchGeneDetails(gene.geneId);
         setGeneDetail(geneDetails);
         setGeneBounds(geneBounds);
 
@@ -49,9 +50,6 @@ const GeneViewer = ({
 
           // fetch gene sequence
         }
-
-
-
       } catch (error) {
         console.log("fetchGeneDetails error: ", error);
         setError("Failed to fetch gene details. Please try again.");
